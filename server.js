@@ -183,8 +183,18 @@ async function callCometAPI(systemPrompt, userPrompt, userApiKey, jsonMode = tru
         const content = response.data.choices[0].message.content;
         return jsonMode ? JSON.parse(content) : content;
     } catch (error) {
-        console.error("Errore CometAPI:", error.response ? error.response.data : error.message);
-        throw new Error("Errore durante la chiamata all'AI");
+        let msg = "Errore API sconosciuto";
+        if (error.response && error.response.data) {
+            if (error.response.data.error && error.response.data.error.message) {
+                msg = error.response.data.error.message;
+            } else {
+                msg = JSON.stringify(error.response.data);
+            }
+        } else if (error.message) {
+            msg = error.message;
+        }
+        console.error("Errore CometAPI:", msg);
+        throw new Error("Dettaglio Errore API: " + msg);
     }
 }
 
@@ -243,7 +253,7 @@ app.post('/api/generate', async (req, res) => {
         res.json({ success: true, type: 'geometric', code: finalCode.replace(/```openscad/ig, '').replace(/```/g, '') });
     } catch (error) {
         console.error(error);
-        res.status(500).json({ success: false, error: "Errore interno server o chiave API non valida." });
+        res.status(500).json({ success: false, error: error.message || "Errore interno server." });
     }
 });
 
