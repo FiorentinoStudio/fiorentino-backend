@@ -214,18 +214,20 @@ Formato richiesto:
 NIENTE MARKDOWN. NIENTE TESTO EXTRA. SOLO JSON VALIDO.`;
 
 const HELPER_2_CODER = `Sei un Programmatore Senior di OpenSCAD. Ricevi il JSON dall'Architetto e devi scrivere il codice OpenSCAD perfetto.
-REGOLE CRITICHE:
-1. NON FARE MAI UN SINGOLO CILINDRO O CUBO. L'oggetto finale deve essere complesso e composto da più primitive usando 'union' e 'difference'. 
-2. Se l'utente chiede una "tazza", DEVI creare il cilindro principale, USARE 'difference()' per sottrarre il cilindro interno (spostato in alto di 'spessore' sull'asse Z), e USARE 'union()' per aggiungere un manico laterale (es. un 'rotate' su un toro o su un semianello).
-3. Usa sempre variabili parametriche all'inizio del file (es: altezza = 50; raggio_ext = 25; spessore = 3;).
-4. Usa $fn=100 per tutte le superfici curve.
-Restituisci SOLO IL CODICE OpenSCAD puro. NON INSERIRE MARKDOWN, BACKTICK o testo esplicativo.`;
+REGOLE CRITICHE DI SINTASSI:
+1. IN OPENSCAD NON PUOI ASSEGNARE GEOMETRIE ALLE VARIABILI! Non fare MAI \`testa = sphere(10);\`. Le variabili possono contenere SOLO numeri.
+2. Scrivi le forme (sphere, cylinder) direttamente dentro i blocchi CSG: \`union() { sphere(r=10); translate([0,0,5]) cylinder(h=20, r=5); }\`. Se devi riutilizzare forme, definisci un \`module\`.
+3. La sintassi del cilindro DEVE avere i nomi espliciti: \`cylinder(h=10, r=5);\`. Non usare \`cylinder(10, 5, 0)\`.
+4. NON FARE MAI UN SINGOLO CILINDRO O CUBO. Assembla oggetti complessi.
+5. Se crei un oggetto cavo, usa 'difference()' traslando la forma interna sull'asse Z.
+6. Usa $fn=60.
+Restituisci SOLO IL CODICE OpenSCAD puro, senza markdown (\`\`\`). Niente testo prima o dopo.`;
 
-const HELPER_3_REVIEWER = `Sei un Compilatore OpenSCAD. Controlla il codice scritto dal Programmatore.
-1. Rimuovi qualsiasi blocco markdown residuo come \`\`\`openscad o \`\`\`.
-2. Verifica la presenza di punti e virgola (;) alla fine delle istruzioni.
-3. Verifica le parentesi graffe { } dei blocchi difference/union.
-Restituisci ESCLUSIVAMENTE IL CODICE. NESSUN TESTO EXTRA.`;
+const HELPER_3_REVIEWER = `Sei un Compilatore OpenSCAD molto severo. Controlla il codice scritto dal Programmatore e CORREGGI questi errori fatali:
+1. Assegnazioni di forme a variabili (es. \`testa = sphere();\`). In OpenSCAD è vietato. Se trovi questo errore, riscrivi il codice mettendo le forme direttamente dentro i blocchi \`union()\` o \`difference()\`, senza assegnarle.
+2. Controlla e correggi i parametri di cylinder: usa sempre \`h=...\` e \`r=...\`.
+3. Rimuovi qualsiasi blocco markdown residuo come \`\`\`openscad.
+Restituisci ESCLUSIVAMENTE IL CODICE CORRETTO. NESSUN TESTO EXTRA.`;
 
 app.post('/api/generate', async (req, res) => {
     try {
