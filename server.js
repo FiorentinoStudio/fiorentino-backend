@@ -188,55 +188,62 @@ async function callCometAPI(systemPrompt, userPrompt, userApiKey, jsonMode = tru
     }
 }
 
-const PM_PROMPT = `Sei il Project Manager di una fabbrica 3D. 
-Analizza la richiesta dell'utente. Se è un oggetto geometrico/meccanico che può essere costruito con primitive 3D, restituisci: {"tipo": "geometria", "descrizione_tecnica": "<descrizione>"}.
-Se è una forma organica complessa, restituisci: {"tipo": "organico", "descrizione_tecnica": "<descrizione>"}
-NON AGGIUNGERE ALTRO TESTO.`;
+const HELPER_1_ARCHITECT = `Sei un Ingegnere 3D e Architetto CAD esperto. L'utente vuole creare un oggetto solido.
+Devi analizzare la richiesta testuale e scomporre l'oggetto in operazioni CSG (Costructive Solid Geometry) per OpenSCAD.
+Restituisci ESCLUSIVAMENTE un file JSON con la struttura logica e matematica dell'oggetto.
+Formato richiesto:
+{
+  "nome_oggetto": "...",
+  "componenti_base": [
+    {"forma": "cilindro/cubo/sfera/toro", "scopo": "...", "parametri": "es. raggio X, altezza Y"}
+  ],
+  "operazioni_csg": [
+    "spiegazione passo-passo di quali union(), difference(), translate(), rotate() usare per assemblare i pezzi, stando attento a non bucare il fondo se si scava l'interno (translate in Z)."
+  ]
+}
+NIENTE MARKDOWN. NIENTE TESTO EXTRA. SOLO JSON VALIDO.`;
 
-const HELPER_1_ARCHITECT = `Sei l'Architetto 3D. Prendi la descrizione tecnica e restituisci SOLO un JSON con i parametri matematici e primitive necessarie. Esempio: {"forma_base": "cilindro", "parametri": {"raggio": 10, "altezza": 50}, "addizioni": [], "sottrazioni": []}. NIENTE TESTO EXTRA.`;
+const HELPER_2_CODER = `Sei un Programmatore Senior di OpenSCAD. Ricevi il JSON dall'Architetto e devi scrivere il codice OpenSCAD perfetto.
+REGOLE CRITICHE:
+1. NON FARE MAI UN SINGOLO CILINDRO O CUBO. L'oggetto finale deve essere complesso e composto da più primitive usando 'union' e 'difference'. 
+2. Se l'utente chiede una "tazza", DEVI creare il cilindro principale, USARE 'difference()' per sottrarre il cilindro interno (spostato in alto di 'spessore' sull'asse Z), e USARE 'union()' per aggiungere un manico laterale (es. un 'rotate' su un toro o su un semianello).
+3. Usa sempre variabili parametriche all'inizio del file (es: altezza = 50; raggio_ext = 25; spessore = 3;).
+4. Usa $fn=100 per tutte le superfici curve.
+Restituisci SOLO IL CODICE OpenSCAD puro. NON INSERIRE MARKDOWN, BACKTICK o testo esplicativo.`;
 
-const HELPER_2_CODER = `Sei il Programmatore OpenSCAD. Prendi i parametri in JSON e scrivi SOLO il codice OpenSCAD corrispondente. Usa module, union, difference. Niente markdown.`;
+const HELPER_3_REVIEWER = `Sei un Compilatore OpenSCAD. Controlla il codice scritto dal Programmatore.
+1. Rimuovi qualsiasi blocco markdown residuo come \`\`\`openscad o \`\`\`.
+2. Verifica la presenza di punti e virgola (;) alla fine delle istruzioni.
+3. Verifica le parentesi graffe { } dei blocchi difference/union.
+Restituisci ESCLUSIVAMENTE IL CODICE. NESSUN TESTO EXTRA.`;
 
-const HELPER_3_REVIEWER = `Sei il Revisore OpenSCAD. Controlla la sintassi e restituisci SOLO il codice corretto pronto per la compilazione. NIENTE TESTO EXTRA.`;
-
-app.post('/api/generate', upload.single('image'), async (req, res) => {
+app.post('/api/generate', async (req, res) => {
     try {
         const userApiKey = req.headers['x-user-api-key'];
         if (!userApiKey) return res.status(401).json({ success: false, error: "API Key mancante." });
 
         const { prompt } = req.body;
-        const file = req.file;
-
-        if (file) {
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            fs.unlinkSync(file.path);
-            return res.json({ success: true, type: 'organic', message: 'MOCK Image processed.', modelUrl: 'https://example.com/mock.obj' });
-        }
-
-        let pmDecision;
-        try { pmDecision = await callCometAPI(PM_PROMPT, prompt, userApiKey, true); }
-        catch(e) { pmDecision = { tipo: "geometria", descrizione_tecnica: prompt }; }
-
-        if (pmDecision.tipo === 'organico') {
-            return res.json({ success: true, type: 'organic', message: 'MOCK Text processed.', modelUrl: 'https://example.com/mock.obj' });
-        }
+        if (!prompt) return res.status(400).json({ success: false, error: "Prompt vuoto." });
 
         let architectJson;
-        try { architectJson = await callCometAPI(HELPER_1_ARCHITECT, pmDecision.descrizione_tecnica, userApiKey, true); }
-        catch(e) { architectJson = { mock: true, height: 100 }; }
+        try { 
+            architectJson = await callCometAPI(HELPER_1_ARCHITECT, prompt, userApiKey, true); 
+        } catch(e) { throw new Error("Errore Architetto"); }
 
         let rawCode;
-        try { rawCode = await callCometAPI(HELPER_2_CODER, JSON.stringify(architectJson), userApiKey, false); }
-        catch(e) { rawCode = `cylinder(h=10, r=5);\n`; }
+        try { 
+            rawCode = await callCometAPI(HELPER_2_CODER, JSON.stringify(architectJson), userApiKey, false); 
+        } catch(e) { throw new Error("Errore Programmatore"); }
 
         let finalCode;
-        try { finalCode = await callCometAPI(HELPER_3_REVIEWER, rawCode, userApiKey, false); }
-        catch(e) { finalCode = rawCode; }
+        try { 
+            finalCode = await callCometAPI(HELPER_3_REVIEWER, rawCode, userApiKey, false); 
+        } catch(e) { finalCode = rawCode; } // Fallback gracefully
 
-        res.json({ success: true, type: 'geometric', code: finalCode });
+        res.json({ success: true, type: 'geometric', code: finalCode.replace(/```openscad/ig, '').replace(/```/g, '') });
     } catch (error) {
         console.error(error);
-        res.status(500).json({ success: false, error: "Errore interno server" });
+        res.status(500).json({ success: false, error: "Errore interno server o chiave API non valida." });
     }
 });
 
