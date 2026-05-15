@@ -162,7 +162,7 @@ app.use((err, req, res, next) => {
 // ══════════════════════════════════════════════════════════════
 //  LOGICA MULTI-AGENTE AI 3D FACTORY
 // ══════════════════════════════════════════════════════════════
-const COMET_API_URL = 'https://api.openai.com/v1/chat/completions';
+const COMET_API_URL = 'https://api.cometapi.com/v1/chat/completions';
 
 async function callCometAPI(systemPrompt, userPrompt, userApiKey, jsonMode = true) {
     try {
