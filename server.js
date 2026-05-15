@@ -238,12 +238,12 @@ app.post('/api/generate', async (req, res) => {
         let architectJson;
         try { 
             architectJson = await callCometAPI(HELPER_1_ARCHITECT, prompt, userApiKey, true); 
-        } catch(e) { throw new Error("Errore Architetto"); }
+        } catch(e) { throw new Error("Errore Architetto: " + e.message); }
 
         let rawCode;
         try { 
             rawCode = await callCometAPI(HELPER_2_CODER, JSON.stringify(architectJson), userApiKey, false); 
-        } catch(e) { throw new Error("Errore Programmatore"); }
+        } catch(e) { throw new Error("Errore Programmatore: " + e.message); }
 
         let finalCode;
         try { 
