@@ -166,8 +166,8 @@ const COMET_API_CHAT_URL = 'https://api.cometapi.com/v1/chat/completions';
 const COMET_API_IMAGE_URL = 'https://api.cometapi.com/v1/images/generations';
 
 async function callCometAPI(systemPrompt, userPrompt, userApiKey, model = "gpt-4o", jsonMode = true) {
-    // Claude non supporta response_format: json_object - usiamo solo testo
-    const isClaudeModel = model.startsWith('claude');
+    // Claude su CometAPI usa nomi tipo "claude-sonnet-4-6", non supporta response_format json
+    const isClaudeModel = model.toLowerCase().includes('claude');
     const useJsonMode = jsonMode && !isClaudeModel;
     try {
         const payload = {
@@ -221,10 +221,14 @@ async function callCometImageAPI(prompt, userApiKey) {
                 'Content-Type': 'application/json'
             }
         });
+        if (!response.data || !response.data.data || !response.data.data[0]) {
+            throw new Error("Risposta API immagine malformata: " + JSON.stringify(response.data));
+        }
         return response.data.data[0].url;
     } catch (error) {
+        const msg = error.response?.data?.error?.message || error.message || "Errore sconosciuto";
         console.error("Errore CometAPI (Image):", error.response?.data || error.message);
-        throw new Error("Errore durante la generazione dell'immagine");
+        throw new Error("Errore generazione immagine DALL-E: " + msg);
     }
 }
 
@@ -278,11 +282,14 @@ app.post('/api/generate', async (req, res) => {
         // 2. FLUSSO ORGANICO
         if (pmDecision.tipo === 'organico') {
             try {
-                let visualPrompt = await callCometAPI(PROMPT_ENHANCER, pmDecision.descrizione_tecnica, userApiKey, 'gpt-4o', false);
-                let imageUrl = await callCometImageAPI(visualPrompt, userApiKey);
+                const visualPrompt = await callCometAPI(PROMPT_ENHANCER, pmDecision.descrizione_tecnica, userApiKey, 'gpt-4o-mini', false);
+                console.log('[Organic] Visual prompt generato:', visualPrompt.substring(0, 100));
+                const imageUrl = await callCometImageAPI(visualPrompt, userApiKey);
+                console.log('[Organic] Image URL:', imageUrl);
                 return res.json({ success: true, type: 'organic', imageUrl: imageUrl });
             } catch (imgError) {
-                return res.status(500).json({ success: false, error: "Errore durante la generazione immagine organica." });
+                console.error('[Organic] Errore dettagliato:', imgError.message);
+                return res.status(500).json({ success: false, error: "Errore generazione organica: " + imgError.message });
             }
         }
 
