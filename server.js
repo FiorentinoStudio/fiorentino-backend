@@ -217,32 +217,16 @@ NON AGGIUNGERE ALTRO TESTO.`;
 
 const PROMPT_ENHANCER = `Sei un esperto di prompt engineering visivo. L'utente vuole un modello 3D organico. Scrivi un prompt estremamente dettagliato in inglese per DALL-E 3 per generare una concept art iper-realistica di questo oggetto su sfondo neutro, pronta per una scansione Image-to-3D. Restituisci SOLO il testo del prompt.`;
 
-const HELPER_1_ARCHITECT = `Sei un Ingegnere 3D e Architetto CAD Industriale.
-Devi analizzare la richiesta testuale e scomporre l'oggetto in operazioni CSG per OpenSCAD.
-REGOLA FONDAMENTALE: Non accontentarti di forme basilari. Qualsiasi oggetto (es. un estintore, un tavolo, un motore) DEVE essere composto da ALMENO 8-15 sottocomponenti iper-dettagliati. Pensa a viti, smussature, valvole, perni, manici ergonomici, basi di appoggio, etichette in rilievo. Non voglio giocattoli, voglio design industriali.
+const MASTER_ENGINEER_PROMPT = `Sei un Master CAD Engineer Senior. Il tuo compito è generare codice OpenSCAD perfetto per modelli 3D di livello industriale.
+NON RESTITUIRE JSON. Restituisci ESCLUSIVAMENTE codice OpenSCAD, senza markdown e senza nient'altro.
+Devi pensare passo-passo scrivendo il tuo ragionamento SOLO COME COMMENTI "//" all'inizio del file.
 
-Restituisci ESCLUSIVAMENTE un file JSON con questa struttura:
-{
-  "nome_oggetto": "...",
-  "componenti_dettagliati": [
-    {"forma": "...", "scopo": "...", "coordinate_indicative": "[x,y,z]"}
-  ],
-  "operazioni_csg": [
-    "spiegazione matematica precisissima su come incastrare le decine di pezzi, ricordando di usare translate() e rotate() per posizionare le valvole o i manici"
-  ]
-}
-SOLO JSON VALIDO.`;
-
-const HELPER_2_CODER = `Sei un Programmatore Senior di OpenSCAD. Ricevi il JSON dall'Architetto.
-REGOLE CRITICHE PER ALTA COMPLESSITÀ:
-1. Usa $fn=100 per curve perfette.
-2. Sfrutta hull() per creare forme organiche/fluide tra due primitive.
-3. IN OPENSCAD NON PUOI ASSEGNARE GEOMETRIE ALLE VARIABILI! Metti le forme (sphere, cylinder) direttamente nei blocchi CSG (union, difference).
-4. La sintassi del cilindro DEVE avere: cylinder(h=10, r=5); o cylinder(h=10, r1=5, r2=2);
-5. Aggiungi i commenti al codice per ogni sottocomponente (es. // Valvola, // Tubo flessibile).
-6. Usa le traslazioni in modo coerente. Se fai un buco (difference), estendi l'oggetto sottrattivo di +0.1 per evitare z-fighting.
-7. IL CODICE DEVE ESSERE LUNGO E DETTAGLIATO. Non scrivere script da 10 righe. Usa decine di operazioni se necessario per dare ultra realismo meccanico.
-Restituisci SOLO IL CODICE OpenSCAD puro, niente markdown.`;
+REGOLE CRITICHE:
+1. Usa logica procedurale. Definisci le variabili chiave in cima (es. corpo_h = 60; corpo_r = 14;).
+2. Alta Complessità: NON accontentarti di 3 cilindri. Qualsiasi oggetto deve avere ALMENO 10-15 sottocomponenti ultra dettagliati (smussi, valvole, perni, leve, maniglie, dettagli in rilievo). Usa $fn=80 o 100.
+3. Sfrutta funzioni avanzate come hull() per creare forme fluide tra due o più primitive, e usa difference() allungando le primitive di scavo per evitare "z-fighting".
+4. SINTASSI OPENSCAD: Vietato assegnare forme a variabili! (Sbagliato: testa = sphere(10); Giusto: usa sphere(r=10); dentro una union). I cilindri devono avere parametri chiari: cylinder(h=10, r=5);
+5. Assembla tutto dentro a un \`module oggetto_completo() { ... }\` strutturato e indentato, e infine richiama \`oggetto_completo();\` alla fine del file.`;
 
 const HELPER_3_REVIEWER = `Sei un Compilatore OpenSCAD. Analizza il codice del Coder.
 Cerca questi errori:
@@ -285,25 +269,21 @@ app.post('/api/generate', async (req, res) => {
         }
 
         // 3. FLUSSO GEOMETRICO
-        let architectJson;
-        try { 
-            architectJson = await callCometAPI(HELPER_1_ARCHITECT, pmDecision.descrizione_tecnica, userApiKey, selectedModel, true); 
-        } catch(e) { throw new Error("Errore Architetto."); }
-
         let maxRetries = 3;
         let currentTry = 1;
         let isCodeValid = false;
         let currentCode = "";
-        let feedbackForCoder = JSON.stringify(architectJson);
+        let feedbackForCoder = pmDecision.descrizione_tecnica; // Prompt originale dell'utente
 
         while (currentTry <= maxRetries && !isCodeValid) {
             let coderPrompt = currentTry === 1 
-                ? feedbackForCoder 
-                : "Il revisore ha trovato questi errori. Correggili:\n" + feedbackForCoder + "\nCodice:\n" + currentCode;
+                ? "Ecco la richiesta dell'utente: " + feedbackForCoder 
+                : "Il revisore ha trovato questi errori nel tuo tentativo precedente. Correggili senza perdere la complessità dell'oggetto generato:\n" + feedbackForCoder + "\nCodice precedente:\n" + currentCode;
             
             try {
-                currentCode = await callCometAPI(HELPER_2_CODER, coderPrompt, userApiKey, selectedModel, false);
-            } catch(e) { throw new Error("Errore Coder."); }
+                // Chiamata zero-shot/few-shot al Master Engineer che ragiona e scrive il codice direttamente.
+                currentCode = await callCometAPI(MASTER_ENGINEER_PROMPT, coderPrompt, userApiKey, selectedModel, false);
+            } catch(e) { throw new Error("Errore Master Engineer: " + e.message); }
 
             let reviewResult;
             try {
