@@ -232,105 +232,143 @@ async function callCometImageAPI(prompt, userApiKey) {
     }
 }
 
-const PM_PROMPT = `Sei il Project Manager di una fabbrica 3D. 
-Analizza la richiesta dell'utente. Se è un oggetto geometrico o meccanico, restituisci RIGOROSAMENTE questo JSON: {"tipo": "geometria", "descrizione_tecnica": "<descrizione>"}.
-Se è un volto, un animale, un mostro o forma puramente organica, restituisci: {"tipo": "organico", "descrizione_tecnica": "<descrizione>"}
-NON AGGIUNGERE ALTRO TESTO.`;
+// ═══════════════════════════════════════════════════════════════
+//  CLASSIFICATORE LOCALE (zero costo API)
+// ═══════════════════════════════════════════════════════════════
+const ORGANIC_KEYWORDS = [
+    'animale','animali','cane','gatto','leone','tigre','orso','volpe','cavallo','uccello','pesce',
+    'drago','dinosauro','mostro','creatura','personaggio','viso','faccia','testa','corpo umano',
+    'statua','busto','scultura organica','albero','pianta','fiore','foglia','fungo','corallo',
+    'nuvola','montagna organica','roccia organica'
+];
 
-const PROMPT_ENHANCER = `Sei un esperto di prompt engineering visivo. L'utente vuole un modello 3D organico. Scrivi un prompt estremamente dettagliato in inglese per DALL-E 3 per generare una concept art iper-realistica di questo oggetto su sfondo neutro, pronta per una scansione Image-to-3D. Restituisci SOLO il testo del prompt.`;
+function isOrganic(prompt) {
+    const lower = prompt.toLowerCase();
+    return ORGANIC_KEYWORDS.some(kw => lower.includes(kw));
+}
 
-const MASTER_ENGINEER_PROMPT = `Sei un Master CAD Engineer Senior. Il tuo compito è generare codice OpenSCAD perfetto per modelli 3D di livello industriale.
-NON RESTITUIRE JSON. Restituisci ESCLUSIVAMENTE codice OpenSCAD, senza markdown e senza nient'altro.
-Devi pensare passo-passo scrivendo il tuo ragionamento SOLO COME COMMENTI "//" all'inizio del file.
+// ═══════════════════════════════════════════════════════════════
+//  PROMPT ENHANCER per DALL-E (forme organiche)
+// ═══════════════════════════════════════════════════════════════
+const PROMPT_ENHANCER = `You are a visual prompt engineer for DALL-E 3. The user wants to 3D-print an organic object. Write a single, ultra-detailed English prompt to generate a photorealistic concept art on a neutral white background, ready for Image-to-3D scanning. Return ONLY the prompt text, no other words.`;
 
-REGOLE CRITICHE:
-1. Usa logica procedurale. Definisci le variabili chiave in cima (es. corpo_h = 60; corpo_r = 14;).
-2. Alta Complessità: NON accontentarti di 3 cilindri. Qualsiasi oggetto deve avere ALMENO 10-15 sottocomponenti ultra dettagliati (smussi, valvole, perni, leve, maniglie, dettagli in rilievo). Usa $fn=80 o 100.
-3. Sfrutta funzioni avanzate come hull() per creare forme fluide tra due o più primitive, e usa difference() allungando le primitive di scavo per evitare "z-fighting".
-4. SINTASSI OPENSCAD: Vietato assegnare forme a variabili! (Sbagliato: testa = sphere(10); Giusto: usa sphere(r=10); dentro una union). I cilindri devono avere parametri chiari: cylinder(h=10, r=5);
-5. Assembla tutto dentro a un \`module oggetto_completo() { ... }\` strutturato e indentato, e infine richiama \`oggetto_completo();\` alla fine del file.`;
+// ═══════════════════════════════════════════════════════════════
+//  MASTER OPENSCAD ENGINEER — singola chiamata, few-shot
+// ═══════════════════════════════════════════════════════════════
+const OPENSCAD_SYSTEM_PROMPT = `You are an expert OpenSCAD programmer. Generate valid, compilable OpenSCAD code for 3D printing.
+Return ONLY the raw OpenSCAD code. No markdown, no explanation, no backticks.
 
-const HELPER_3_REVIEWER = `Sei un Compilatore OpenSCAD. Analizza il codice del Coder.
-Cerca questi errori:
-1. Assegnazioni di forme a variabili (es. testa = sphere();). Vietato.
-2. Parametri mancanti nei cilindri.
-3. Blocchi vuoti o z-fighting palese.
-Restituisci ESCLUSIVAMENTE un JSON:
-{
-  "status": "ok" o "error",
-  "feedback": "se error, spiega esattamente dove e come sistemare",
-  "codice": "il codice OpenSCAD senza markdown"
-}`;
+STRICT RULES:
+1. Always define named variables at the top (e.g. body_h = 60; body_r = 14;)
+2. Organize everything inside a module, then call it at the end
+3. Use $fn=80 for smooth curves
+4. Use hull() to create organic transitions between shapes
+5. Use difference() for hollow parts — extend the cutting shape by 0.1 to avoid z-fighting
+6. NEVER assign geometry to variables (WRONG: head = sphere(10); RIGHT: use sphere(r=10) inside union/difference blocks)
+7. cylinder() must always use named params: cylinder(h=10, r=5) or cylinder(h=10, r1=5, r2=3)
+8. Add // comments for each sub-component
+9. Aim for at least 10 distinct sub-components for realism
 
+Here is a PERFECT example of the style and quality expected:
+
+$fn = 80;
+body_h = 60;
+body_r = 14;
+
+module fire_extinguisher() {
+    union() {
+        // Base
+        cylinder(h=3, r=body_r);
+        // Main tank body
+        translate([0,0,3]) cylinder(h=body_h, r=body_r);
+        // Top dome
+        translate([0,0,body_h+3]) sphere(r=body_r);
+        // Valve neck
+        translate([0,0,body_h+3+body_r-2]) cylinder(h=6, r=5);
+        // Valve block
+        translate([0,0,body_h+3+body_r+4]) cylinder(h=7, r=7);
+        // Fixed lower handle
+        translate([0,0,body_h+3+body_r+6])
+            rotate([0,-15,90]) translate([-2.5,0,0]) cube([5,22,3]);
+        // Trigger handle
+        translate([0,0,body_h+3+body_r+11])
+            rotate([0,10,90]) translate([-2.5,0,0]) cube([5,24,3]);
+        // Safety pin
+        translate([0,10,body_h+3+body_r+5]) cylinder(h=8, r=1);
+        // Pressure gauge
+        translate([6,0,body_h+3+body_r+9]) rotate([0,90,0]) cylinder(h=4, r=3.5);
+        // Hose attachment
+        translate([-6,0,body_h+3+body_r+9]) rotate([0,-90,0]) cylinder(h=3, r=3);
+        // Flexible hose via hull
+        hull() {
+            translate([-9,0,body_h+3+body_r+9]) sphere(r=2);
+            translate([-body_r-1,0,-10]) sphere(r=2);
+            translate([-body_r-1,5,-30]) sphere(r=2);
+        }
+        // Nozzle
+        translate([-body_r-1,5,-30]) rotate([0,180,0])
+            cylinder(h=10, r1=2, r2=3.5);
+        // Keychain ring
+        translate([0,24,body_h+3+body_r+6])
+            difference() {
+                cylinder(h=4, r=6, center=true);
+                cylinder(h=6, r=3.5, center=true);
+            }
+        // Label plate
+        translate([-1,-body_r+0.5,body_h/2])
+            rotate([90,0,0]) linear_extrude(height=1.5)
+                text("FIRE", size=7, font="Liberation Sans:style=Bold", valign="center", halign="center");
+    }
+}
+
+fire_extinguisher();`;
+
+// ═══════════════════════════════════════════════════════════════
+//  ROUTE: POST /api/generate
+// ═══════════════════════════════════════════════════════════════
 app.post('/api/generate', async (req, res) => {
     try {
         const userApiKey = req.headers['x-user-api-key'];
-        if (!userApiKey) return res.status(401).json({ success: false, error: "API Key mancante." });
+        if (!userApiKey) return res.status(401).json({ success: false, error: 'API Key mancante.' });
 
         const { prompt, model } = req.body;
-        const selectedModel = model || 'gpt-4o';
-        if (!prompt) return res.status(400).json({ success: false, error: "Prompt vuoto." });
+        if (!prompt) return res.status(400).json({ success: false, error: 'Prompt vuoto.' });
 
-        // 1. PM
-        let pmDecision;
-        try {
-            pmDecision = await callCometAPI(PM_PROMPT, prompt, userApiKey, 'gpt-4o-mini', true);
-        } catch(e) {
-            pmDecision = { tipo: "geometria", descrizione_tecnica: prompt };
-        }
+        const selectedModel = model || 'gpt-4o-mini';
 
-        // 2. FLUSSO ORGANICO
-        if (pmDecision.tipo === 'organico') {
+        // ── FLUSSO ORGANICO: classificazione locale, zero costo API ──
+        if (isOrganic(prompt)) {
             try {
-                const visualPrompt = await callCometAPI(PROMPT_ENHANCER, pmDecision.descrizione_tecnica, userApiKey, 'gpt-4o-mini', false);
-                console.log('[Organic] Visual prompt generato:', visualPrompt.substring(0, 100));
+                // 1 sola chiamata per migliorare il prompt visivo
+                const visualPrompt = await callCometAPI(
+                    PROMPT_ENHANCER, prompt, userApiKey, 'gpt-4o-mini', false
+                );
+                console.log('[Organic] prompt:', visualPrompt.substring(0, 120));
                 const imageUrl = await callCometImageAPI(visualPrompt, userApiKey);
-                console.log('[Organic] Image URL:', imageUrl);
-                return res.json({ success: true, type: 'organic', imageUrl: imageUrl });
-            } catch (imgError) {
-                console.error('[Organic] Errore dettagliato:', imgError.message);
-                return res.status(500).json({ success: false, error: "Errore generazione organica: " + imgError.message });
+                console.log('[Organic] URL:', imageUrl);
+                return res.json({ success: true, type: 'organic', imageUrl });
+            } catch (e) {
+                console.error('[Organic] Error:', e.message);
+                return res.status(500).json({ success: false, error: 'Errore generazione immagine: ' + e.message });
             }
         }
 
-        // 3. FLUSSO GEOMETRICO
-        let maxRetries = 3;
-        let currentTry = 1;
-        let isCodeValid = false;
-        let currentCode = "";
-        let feedbackForCoder = pmDecision.descrizione_tecnica; // Prompt originale dell'utente
-
-        while (currentTry <= maxRetries && !isCodeValid) {
-            let coderPrompt = currentTry === 1 
-                ? "Ecco la richiesta dell'utente: " + feedbackForCoder 
-                : "Il revisore ha trovato questi errori nel tuo tentativo precedente. Correggili senza perdere la complessità dell'oggetto generato:\n" + feedbackForCoder + "\nCodice precedente:\n" + currentCode;
-            
-            try {
-                // Chiamata zero-shot/few-shot al Master Engineer che ragiona e scrive il codice direttamente.
-                currentCode = await callCometAPI(MASTER_ENGINEER_PROMPT, coderPrompt, userApiKey, selectedModel, false);
-            } catch(e) { throw new Error("Errore Master Engineer: " + e.message); }
-
-            let reviewResult;
-            try {
-                reviewResult = await callCometAPI(HELPER_3_REVIEWER, currentCode, userApiKey, selectedModel, true);
-            } catch(e) {
-                reviewResult = { status: "ok", codice: currentCode }; 
-            }
-
-            if (reviewResult.status === "ok") {
-                isCodeValid = true;
-                currentCode = reviewResult.codice || currentCode;
-            } else {
-                feedbackForCoder = reviewResult.feedback;
-                currentCode = reviewResult.codice || currentCode;
-                currentTry++;
-            }
+        // ── FLUSSO GEOMETRICO: singola chiamata al modello ──
+        try {
+            const userMessage = `Generate OpenSCAD code for the following object. Follow the style and quality of the example exactly.\n\nObject description: ${prompt}`;
+            let code = await callCometAPI(OPENSCAD_SYSTEM_PROMPT, userMessage, userApiKey, selectedModel, false);
+            // Pulizia markdown residuo
+            code = code.replace(/^```[a-z]*\n?/im, '').replace(/```\s*$/m, '').trim();
+            console.log('[Geometric] Generated', code.length, 'chars with model', selectedModel);
+            return res.json({ success: true, type: 'geometric', code });
+        } catch (e) {
+            console.error('[Geometric] Error:', e.message);
+            return res.status(500).json({ success: false, error: 'Errore generazione codice: ' + e.message });
         }
 
-        res.json({ success: true, type: 'geometric', code: currentCode.replace(/```openscad/ig, '').replace(/```/g, '') });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ success: false, error: error.message || "Errore interno server." });
+        console.error('[Route] Unhandled error:', error);
+        res.status(500).json({ success: false, error: error.message || 'Errore interno server.' });
     }
 });
 
