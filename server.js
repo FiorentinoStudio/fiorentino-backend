@@ -166,27 +166,45 @@ const COMET_API_CHAT_URL = 'https://api.cometapi.com/v1/chat/completions';
 const COMET_API_IMAGE_URL = 'https://api.cometapi.com/v1/images/generations';
 
 async function callCometAPI(systemPrompt, userPrompt, userApiKey, model = "gpt-4o", jsonMode = true) {
+    // Claude non supporta response_format: json_object - usiamo solo testo
+    const isClaudeModel = model.startsWith('claude');
+    const useJsonMode = jsonMode && !isClaudeModel;
     try {
-        const response = await axios.post(COMET_API_CHAT_URL, {
+        const payload = {
             model: model,
             messages: [
                 { role: "system", content: systemPrompt },
                 { role: "user", content: userPrompt }
             ],
-            response_format: jsonMode ? { type: "json_object" } : { type: "text" },
             temperature: 0.1
-        }, {
+        };
+        if (useJsonMode) {
+            payload.response_format = { type: "json_object" };
+        } else if (jsonMode && isClaudeModel) {
+            // Per Claude iniettiamo l'istruzione JSON nel prompt direttamente
+            payload.messages[0].content = systemPrompt + "\n\nRispondi ESCLUSIVAMENTE con JSON valido, senza markdown, senza codice, solo il JSON puro.";
+        }
+        const response = await axios.post(COMET_API_CHAT_URL, payload, {
             headers: {
                 'Authorization': `Bearer ${userApiKey}`,
                 'Content-Type': 'application/json'
             }
         });
-        const content = response.data.choices[0].message.content;
-        return jsonMode ? JSON.parse(content) : content;
+        const content = response.data.choices[0].message.content.trim();
+        // Pulizia del JSON (rimuove eventuali blocchi markdown)
+        const cleanContent = content.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+        if (jsonMode) {
+            try { return JSON.parse(cleanContent); } 
+            catch(e) { 
+                console.error("Parsing JSON fallito, risposta raw:", cleanContent.substring(0, 200));
+                throw new Error("Il modello non ha restituito JSON valido.");
+            }
+        }
+        return cleanContent;
     } catch (error) {
         let msg = error.response?.data?.error?.message || error.message || "Errore sconosciuto";
         console.error(`Errore CometAPI (Modello: ${model}):`, msg);
-        throw new Error("Errore durante la chiamata testuale all'AI: " + msg);
+        throw new Error("Errore AI: " + msg);
     }
 }
 
